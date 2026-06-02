@@ -49,11 +49,41 @@ void Puissance4::initialiserPartie() {
         std::cout << "Votre symbole : "; std::cin >> s1;
         joueur1 = new Humain(n1, s1);
         s2 = (s1 == 'X') ? 'O' : 'X';
-        joueur2 = new IA("Ordinateur", s2);
-        std::cout << "L'ordinateur sera " << s2 << std::endl;
+        
+        int diff;
+        std::cout << "Difficulté IA (1. Standard, 2. Expert, 3. Maître) : ";
+        while (!(std::cin >> diff) || diff < 1 || diff > 3) {
+            std::cin.clear();
+            std::cin.ignore(10000, '\n');
+            std::cout << "Choix invalide. Réessayez : ";
+        }
+        
+        IA::Difficulte diffEnum;
+        switch(diff) {
+            case 1: diffEnum = IA::STANDARD; break;
+            case 2: diffEnum = IA::EXPERT; break;
+            case 3: diffEnum = IA::MAITRE; break;
+            default: diffEnum = IA::STANDARD; break;
+        }
+        
+        joueur2 = new IA("Ordinateur", s2, diffEnum);
+        std::string diffNoms[] = {"Standard", "Expert", "Maître"};
+        std::cout << "L'ordinateur sera " << s2 << " en mode " << diffNoms[diff-1] << std::endl;
     } else {
-        joueur1 = new IA("IA Alpha", 'X');
-        joueur2 = new IA("IA Beta", 'O');
+        int diff1, diff2;
+        std::cout << "Difficulté IA 1 (1-3) : ";
+        std::cin >> diff1;
+        std::cout << "Difficulté IA 2 (1-3) : ";
+        std::cin >> diff2;
+        
+        auto getDiff = [](int d) {
+            if (d == 1) return IA::STANDARD;
+            if (d == 2) return IA::EXPERT;
+            return IA::MAITRE;
+        };
+
+        joueur1 = new IA("IA Alpha", 'X', getDiff(diff1));
+        joueur2 = new IA("IA Beta", 'O', getDiff(diff2));
     }
 
     grille = Grille();
@@ -73,12 +103,14 @@ void Puissance4::jouer() {
         
         bool gagne = false;
         while (!grille.estPleine()) {
+            std::cout << "\033[2J\033[1;1H"; // Efface l'écran et replace le curseur en haut à gauche
             grille.afficher(joueur1->getSymbole(), joueur2->getSymbole());
             int colonne = joueurActuel->choisirCoup(grille);
             Pion pion(joueurActuel->getSymbole(), Position(0, colonne));
 
             if (grille.placer(pion, colonne)) {
                 if (grille.verifierVictoire(colonne, joueurActuel->getSymbole())) {
+                    std::cout << "\033[2J\033[1;1H";
                     grille.afficher(joueur1->getSymbole(), joueur2->getSymbole());
                     std::cout << "\n🎉 Félicitations, " << joueurActuel->getNom() << " ! Vous avez gagné !" << std::endl;
                     gagne = true;
@@ -89,6 +121,7 @@ void Puissance4::jouer() {
         }
 
         if (!gagne) {
+            std::cout << "\033[2J\033[1;1H";
             grille.afficher(joueur1->getSymbole(), joueur2->getSymbole());
             std::cout << "\n🤝 Match nul ! La grille est pleine." << std::endl;
         }
