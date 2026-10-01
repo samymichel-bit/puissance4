@@ -2,14 +2,22 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23ef4444'/><circle cx='50' cy='50' r='30' fill='%23fbbf24'/></svg>" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Puissance 4 (Connect 4)</title>
     <meta name="description" content="Jeu classique Puissance 4 avec modes Joueur vs Joueur, Joueur vs IA (Standard, Expert, Maître) et démo IA vs IA avec mise en valeur de la ligne gagnante." />
     <meta property="og:title" content="Puissance 4 (Connect 4)" />
     <meta property="og:description" content="Jeu classique Puissance 4 avec modes Joueur vs Joueur, Joueur vs IA (Standard, Expert, Maître) et démo IA vs IA avec mise en valeur de la ligne gagnante." />
+    
+    <!-- PWA / Mobile Web App Meta Tags -->
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Puissance 4" />
   </head>
-  <body class="bg-slate-950 text-slate-100 min-h-screen antialiased selection:bg-rose-500 selection:text-white">
+  <body class="bg-slate-950 text-slate-100 min-h-screen antialiased selection:bg-rose-500 selection:text-white overflow-x-hidden touch-manipulation">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

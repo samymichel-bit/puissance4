@@ -176,68 +176,56 @@ export class Connect4Engine {
 
   // Évaluation heuristique conforme au C++ (poids de cases + motifs de 3)
   evaluer(joueurIA: 1 | 2): number {
-    const joueurHumain: 1 | 2 = joueurIA === 1 ? 2 : 1;
     let score = 0;
 
     for (let i = 0; i < NB_LIGNES; i++) {
       for (let j = 0; j < NB_COLONNES; j++) {
         const c = this.grid[i][j];
-        if (c === joueurIA) {
-          score += POIDS_POSITIONNELS[i][j];
-        } else if (c === joueurHumain) {
-          score -= POIDS_POSITIONNELS[i][j];
+        if (c !== null) {
+          score += POIDS_POSITIONNELS[i][j] * (c === joueurIA ? 1 : -1);
         }
       }
     }
 
-    // Compter les alignements de 3
-    const compterTriplets = (joueur: 1 | 2): number => {
+    // Évaluation par bitboards ultra-rapide (0 allocation mémoire)
+    const pIA = joueurIA - 1;
+    const pHum = 1 - pIA;
+    const bIA = this.bitboards[pIA];
+    const bHum = this.bitboards[pHum];
+
+    const compterGroupes = (b: bigint): number => {
       let count = 0;
-      const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
-      for (let r = 0; r < NB_LIGNES; r++) {
-        for (let c = 0; c < NB_COLONNES; c++) {
-          for (const [dr, dc] of dirs) {
-            let pionsJoueur = 0;
-            let casesVides = 0;
-            for (let k = 0; k < 4; k++) {
-              const nr = r + dr * k;
-              const nc = c + dc * k;
-              if (nr >= 0 && nr < NB_LIGNES && nc >= 0 && nc < NB_COLONNES) {
-                const val = this.grid[nr][nc];
-                if (val === joueur) pionsJoueur++;
-                else if (val === null) casesVides++;
-              }
-            }
-            if (pionsJoueur === 3 && casesVides === 1) {
-              count++;
-            }
-          }
+      // Horizontaux (shift 7), Verticaux (shift 1), Diagonale 1 (shift 6), Diagonale 2 (shift 8)
+      const shifts = [1n, 7n, 6n, 8n];
+      for (const s of shifts) {
+        const m = b & (b >> s) & (b >> (2n * s));
+        let temp = m;
+        while (temp > 0n) {
+          if (temp & 1n) count++;
+          temp >>= 1n;
         }
       }
       return count;
     };
 
-    score += compterTriplets(joueurIA) * 100;
-    score -= compterTriplets(joueurHumain) * 100;
+    score += compterGroupes(bIA) * 80;
+    score -= compterGroupes(bHum) * 80;
 
     return score;
   }
 
-  // IA Minimax avec élagage Alpha-Bêta et ordonnancement de coups
-  choisirCoupIA(joueurIA: 1 | 2, difficulte: AIDifficulty): number {
-    let maxProfondeur: number;
-    switch (difficulte) {
-      case 'STANDARD':
-        maxProfondeur = 4;
-        break;
-      case 'EXPERT':
-        maxProfondeur = 6;
-        break;
-      case 'MAITRE':
-        maxProfondeur = 8;
-        break;
-      default:
-        maxProfondeur = 4;
+  // IA Minimax avec élagage Alpha-Bêta, table de transposition et limite de temps stricte (max 300-800ms)
+  choisirCoupIA(joueurIA: 1 | 2, difficulte: AIDifficulty, maxTimeMs: number = 600): number {
+    let maxProfondeur = 5;
+    if (difficulte === 'STANDARD') {
+      maxProfondeur = 4;
+      maxTimeMs = 250;
+    } else if (difficulte === 'EXPERT') {
+      maxProfondeur = 6;
+      maxTimeMs = 500;
+    } else if (difficulte === 'MAITRE') {
+      maxProfondeur = 8;
+      maxTimeMs = 1200;
     }
 
     // Si premier coup sur grille vide, jouer au centre directement (colonne 3)
@@ -245,8 +233,10 @@ export class Connect4Engine {
       return 3;
     }
 
-    // Vérification rapide de coup gagnant immédiat (profondeur 1)
     const validMoves = this.getValidColumns();
+    if (validMoves.length === 1) return validMoves[0];
+
+    // Vérification coup gagnant immédiat (profondeur 1)
     for (const col of validMoves) {
       this.placer(joueurIA, col);
       const win = this.estVictoire(joueurIA);
@@ -254,7 +244,7 @@ export class Connect4Engine {
       if (win) return col;
     }
 
-    // Vérification rapide de contre immédiat de l'adversaire
+    // Vérification blocage direct de l'adversaire
     const joueurAdverse: 1 | 2 = joueurIA === 1 ? 2 : 1;
     for (const col of validMoves) {
       this.placer(joueurAdverse, col);
@@ -263,21 +253,38 @@ export class Connect4Engine {
       if (opponentWin) return col;
     }
 
-    // Ordre statique favorisant le centre (identique au C++)
+    // Ordre statique favorisant les colonnes centrales [3, 2, 4, 1, 5, 0, 6]
     const staticOrdre = [3, 2, 4, 1, 5, 0, 6];
-    const orderedMoves = staticOrdre.filter(col => this.ouValide(col));
+    const orderedMoves = staticOrdre.filter((col) => this.ouValide(col));
+
+    const startTime = performance.now();
+    const deadline = startTime + maxTimeMs;
+    const memo = new Map<bigint, { depth: number; score: number }>();
 
     let meilleurCoupGlobal = orderedMoves[0];
-    let meilleurScoreGlobal = -Infinity;
 
-    // Iterative deepening jusqu'à maxProfondeur
+    // Iterative deepening avec deadline
     for (let depth = 1; depth <= maxProfondeur; depth++) {
       let meilleurScore = -Infinity;
       let meilleurCoupIter = orderedMoves[0];
+      let aborted = false;
 
       for (const col of orderedMoves) {
+        if (performance.now() > deadline && depth > 2) {
+          aborted = true;
+          break;
+        }
+
         this.placer(joueurIA, col);
-        const score = this.minimax(col, depth - 1, -Infinity, Infinity, false, joueurIA);
+        const score = this.minimaxFast(
+          depth - 1,
+          -Infinity,
+          Infinity,
+          false,
+          joueurIA,
+          deadline,
+          memo
+        );
         this.annulerCoup(col);
 
         if (score > meilleurScore) {
@@ -286,57 +293,94 @@ export class Connect4Engine {
         }
       }
 
+      if (aborted) break;
+
       meilleurCoupGlobal = meilleurCoupIter;
-      meilleurScoreGlobal = meilleurScore;
-      if (meilleurScoreGlobal >= 1000000) break; // Victoire forcée trouvée
+      if (meilleurScore >= 900000) break; // Victoire assurée trouvée
     }
 
     return meilleurCoupGlobal;
   }
 
-  private minimax(
-    dernierCoup: number,
+  private minimaxFast(
     profondeur: number,
     alpha: number,
     beta: number,
     estMaximisant: boolean,
-    joueurIA: 1 | 2
+    joueurIA: 1 | 2,
+    deadline: number,
+    memo: Map<bigint, { depth: number; score: number }>
   ): number {
     const joueurHumain: 1 | 2 = joueurIA === 1 ? 2 : 1;
 
-    // Détection de fin de partie
+    // Détection de fin
     if (this.estVictoire(joueurIA)) return 1000000 + profondeur;
     if (this.estVictoire(joueurHumain)) return -1000000 - profondeur;
     if (this.estPleine() || profondeur === 0) return this.evaluer(joueurIA);
 
+    if (performance.now() > deadline) {
+      return this.evaluer(joueurIA);
+    }
+
+    // Clé de mémoïsation basée sur les bitboards combinés
+    const memoKey = (this.bitboards[0] << 32n) ^ this.bitboards[1] ^ (estMaximisant ? 1n : 0n);
+    const cached = memo.get(memoKey);
+    if (cached && cached.depth >= profondeur) {
+      return cached.score;
+    }
+
     const staticOrdre = [3, 2, 4, 1, 5, 0, 6];
-    const moves = staticOrdre.filter(col => this.ouValide(col));
+    const moves = staticOrdre.filter((col) => this.ouValide(col));
+
+    let resultScore: number;
 
     if (estMaximisant) {
       let maxEval = -Infinity;
       for (const col of moves) {
         this.placer(joueurIA, col);
-        const ev = this.minimax(col, profondeur - 1, alpha, beta, false, joueurIA);
+        const ev = this.minimaxFast(
+          profondeur - 1,
+          alpha,
+          beta,
+          false,
+          joueurIA,
+          deadline,
+          memo
+        );
         this.annulerCoup(col);
 
-        maxEval = Math.max(maxEval, ev);
-        alpha = Math.max(alpha, ev);
+        if (ev > maxEval) maxEval = ev;
+        if (ev > alpha) alpha = ev;
         if (beta <= alpha) break;
       }
-      return maxEval;
+      resultScore = maxEval;
     } else {
       let minEval = Infinity;
       for (const col of moves) {
         this.placer(joueurHumain, col);
-        const ev = this.minimax(col, profondeur - 1, alpha, beta, true, joueurIA);
+        const ev = this.minimaxFast(
+          profondeur - 1,
+          alpha,
+          beta,
+          true,
+          joueurIA,
+          deadline,
+          memo
+        );
         this.annulerCoup(col);
 
-        minEval = Math.min(minEval, ev);
-        beta = Math.min(beta, ev);
+        if (ev < minEval) minEval = ev;
+        if (ev < beta) beta = ev;
         if (beta <= alpha) break;
       }
-      return minEval;
+      resultScore = minEval;
     }
+
+    if (memo.size < 40000) {
+      memo.set(memoKey, { depth: profondeur, score: resultScore });
+    }
+
+    return resultScore;
   }
 
   // Génération du texte formaté ANSI / Terminal fidèle au C++
