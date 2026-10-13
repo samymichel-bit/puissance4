@@ -1,0 +1,10 @@
+# Modèle de configuration pour la signature de production (Google Play Store)
+# Renommez ce fichier en "key.properties" et remplissez vos informations de clé :
+#
+# Générer la clé avec keytool :
+# keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+storePassword=VOTRE_MOT_DE_PASSE_KEYSTORE
+keyPassword=VOTRE_MOT_DE_PASSE_CLE
+keyAlias=upload
+storeFile=../upload-keystore.jks

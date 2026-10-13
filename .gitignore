@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.zip
+.DS_Store
+Thumbs.db
+android/app/build/
+android/.gradle/
+android/build/
+.env
+.env.local
+*.log
